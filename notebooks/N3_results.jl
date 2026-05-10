@@ -266,6 +266,7 @@ function get_distances(α, λ, G)
 
 	parity = isodd(h) ? :odd : :even
 
+	# this avoids dealing with the exact transitions
 	if α in (1//4, 1//2, 3//4)
 		α += 1 / floatmax(Float64)
     end
@@ -275,17 +276,17 @@ function get_distances(α, λ, G)
 	rules = Dict(
         (:minuses, :any) => [
             (1/2, (0, G, G)),
-            (Inf,  (0, 0, 0)),
+            (Inf, (0, 0, 0)),
         ],
         (:pluses, :odd) => [
-            (1/4, (h,   h,   h-1)),
-            (1/2, (h,   h,   h+1)),
-            (Inf,  (h+1, h+1, h+1)),
+            (1/4, (h, h, h-1)),
+            (1/2, (h, h, h+1)),
+            (Inf, (h+1, h+1, h+1)),
         ],
         (:pluses, :even) => [
-            (1/2, (h,   h,   h  )),
-            (3/4, (h,   h+1, h+1)),
-            (Inf,  (h+1, h+1, h+2)),
+            (1/2, (h, h, h)),
+            (3/4, (h, h+1, h+1)),
+            (Inf, (h+1, h+1, h+2)),
         ]
     )
 
@@ -321,7 +322,8 @@ function zero_temperature_IT(α, λ, G)
 	Hr(d_mult) = begin
 		out = 0
 		for d in keys(d_mult)
-			out += - d_mult[d] / 3 * log2(d_mult[d] / 3)
+			p_d = d_mult[d] / 3  # prob of distance d
+			out += - p_d * log2(p_d)
 		end
 		return out
 	end
@@ -330,7 +332,8 @@ function zero_temperature_IT(α, λ, G)
 	exp_log_G_D(d_mult, G) = begin
 		out = 0
 		for d in keys(d_mult)
-			out += d_mult[d] / 3 * log2(binomial(G, d))
+			p_d = d_mult[d] / 3 # prob of distance d
+			out += p_d * log2(binomial(G, d))
 		end
 		return out
 	end
@@ -729,6 +732,12 @@ md"""
 ## Figure S3
 """
 
+# ╔═╡ dfc3131f-4252-4cbd-ad7b-39238c8aa63a
+md"""
+!!! warning
+	Takes approximately $1$ minute per subfigure!
+"""
+
 # ╔═╡ b9969be9-8831-4dae-9f50-a40203257a57
 let
 	starting_seed = 42
@@ -1114,6 +1123,7 @@ end
 # ╟─e9318f89-085b-4260-85da-7b9d59ca49c0
 # ╠═17758d85-8bf8-4bb2-9576-ffa52267ebfc
 # ╠═e91d69b1-6fb4-48b1-9edb-7a132a8cb988
+# ╟─dfc3131f-4252-4cbd-ad7b-39238c8aa63a
 # ╟─b9969be9-8831-4dae-9f50-a40203257a57
 # ╟─26207d82-c289-4035-8e99-80f7fccb38a6
 # ╟─faff830b-c5db-46df-9e0d-58dbaa752259

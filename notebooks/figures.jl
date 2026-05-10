@@ -151,6 +151,126 @@ let
 	fig
 end
 
+# ╔═╡ b5f55bd5-7ccd-4297-a324-1ffe9a032023
+let
+	using ProgressLogging
+	using TerminalLoggers
+	# ----- Functions -----
+	# we need a couple of extra functions here:
+	
+	function compute_J(A::BitMatrix, S::Matrix{Int8})
+		N, G = size(S)
+		J = fill(Int8(0), N, N)
+		for i in 1:N-1, j in i+1:N
+			A[i,j] || continue
+			overlap = count(S[i,k] == S[j,k] for k in 1:G)
+			value = overlap > G/2 ? Int8(1) : Int8(-1)
+			J[i,j] = value; J[j,i] = value
+		end
+		return J
+	end
+
+	function get_triangle_stats(J::Matrix{Int8})
+		N = size(J, 1)
+		out = Int8[]
+		for i in 1:N-2
+			for j in i+1:N-1
+				J[i,j] == 0 && continue
+				for k in j+1:N
+					(J[j,k] != 0 && J[k,i] != 0) || continue
+					push!(out, count(x -> x < 0, (J[i,j], J[j,k], J[k,i])))
+				end
+			end
+		end
+		return out
+	end
+
+	function fig3_get_data(N, G, β, λ, α_range; seed, no_tests, n_replicas=100, t_record=50)
+		store_n = zeros(4, length(α_range))
+		
+		for test in 1:no_tests
+			
+			graph = watts_strogatz(N, Int(ceil(N/10)), 0.2; seed=seed+test)
+			A = BitMatrix(adjacency_matrix(graph))
+			g = DynGraph(A)
+			
+			@progress for (i, α) in enumerate(α_range)
+				
+				model = () -> AttractionRepulsionSpinGlass(G=G, alpha=α, lambda=λ, N=N)
+				dynamics = Gibbs(β, false)
+			
+				sim_config = SimConfig(
+					steps=t_record * N,
+					seed = seed,
+					save_dt = N,
+					save_state = true
+				)
+			
+				rconfig = ReplicaConfig(
+					n_replicas = n_replicas,
+					starting_seed = seed,
+					t_record = t_record,
+					sim_config = sim_config
+				)
+			
+				replicas = collect_replicas(model, dynamics, g, rconfig)
+
+				for r in 1:n_replicas
+					J = compute_J(A, replicas[r])
+					dm = get_triangle_stats(J)
+					no_Δ = length(dm);
+					no_Δ == 0 && continue
+					store_n[1,i] += count(==(0), dm) / no_Δ / n_replicas / no_tests
+					store_n[2,i] += count(==(1), dm) / no_Δ / n_replicas / no_tests
+					store_n[3,i] += count(==(2), dm) / no_Δ / n_replicas / no_tests
+					store_n[4,i] += count(==(3), dm) / no_Δ / n_replicas / no_tests
+				end
+			end
+		end
+		return store_n
+	end
+
+	# ----- Set parameters -----
+	N = 50; seed = 1; no_tests = 1
+	α_range = 0.0:0.025:1.0
+
+	param_config = [
+		(G=15, β=20.0, λ=fill(Int8(-1), N), title=L"\lambda_i=-1,\;G=15"),
+		(G=15, β=20.0, λ=fill(Int8( 1), N), title=L"\lambda_i=+1,\;G=15"),
+		(G=17, β=20.0, λ=fill(Int8( 1), N), title=L"\lambda_i=+1,\;G=17"),
+	]
+
+	fig = Figure(fontsize=20, size=(750, 250))
+	axs = [Axis(fig[1, j]) for j in 1:3]
+
+	for (j, cfg) in enumerate(param_config)
+		store_n = fig3_get_data(
+			N, cfg.G, cfg.β, cfg.λ, α_range;
+			seed, no_tests, n_replicas=100, t_record=50
+		)
+		ax = axs[j]
+		mk.scatterlines!(ax, collect(α_range), store_n[1,:], label=L"n_0")
+		mk.scatterlines!(ax, collect(α_range), store_n[2,:], label=L"n_1")
+		mk.scatterlines!(ax, collect(α_range), store_n[3,:], label=L"n_2")
+		mk.scatterlines!(ax, collect(α_range), store_n[4,:], label=L"n_3")
+		ax.title = cfg.title
+		ax.xticks = ([0, 1/4, 1/2, 3/4, 1])
+		ax.xtickformat = x -> latexstring.(round.(x, digits=3))
+		ax.ytickformat = x -> latexstring.(round.(x, digits=3))
+		mk.ylims!(ax, 0, 1)
+	end
+
+	hideydecorations!.(axs[2:3]; label=false, grid=false)
+	Label(fig[end+1, :], L"\alpha", valign=:top)
+	Legend(fig[1, 0], axs[1])
+
+	# folder = ""
+	# filename = "triangles_large_N_example.png"
+	# save(folder * filename, fig, px_per_unit = 400/96)
+
+	fig
+end
+
 # ╔═╡ bf128101-9592-49a9-a398-ebd170d4f405
 folderpath = joinpath(@__DIR__)[1:end-9] * "data/" # this just removes "notebook/"
 
@@ -168,10 +288,18 @@ md"""
 ## Figure 3
 """
 
+# ╔═╡ c95fd462-1737-4765-b4ad-76bc7483e421
+md"""
+!!! warning
+	For this, we just run the experiment directly. 
+	
+	It should take approximately $20$ seconds.
+"""
+
 # ╔═╡ d65cda47-4a97-4a96-8179-29a603ad02bf
 md"""
 ## Figure 4
-see `notebooks/N3_results.jl`
+See `notebooks/N3_results.jl`
 """
 
 # ╔═╡ 245d1034-b94f-44cc-84d1-b86d2e6e4b25
@@ -884,7 +1012,7 @@ let
 	Label(fig[4, 1:2], L"\beta", fontsize = 24)
 	Label(fig[1:3, 0], L"\langle\Omega_3\rangle",fontsize = 24)
 		
-	# save(folderpath * "sensitivity_beta.png", fig, px_per_unit = 400/96)
+	save(folderpath * "sensitivity_beta.png", fig, px_per_unit = 400/96)
 	
 	fig
 end
@@ -1008,6 +1136,12 @@ let
 	fig
 end
 
+# ╔═╡ 64071412-d94b-4da0-84aa-d7d7fa7070a3
+md"""
+# Previous versions
+## Old Figure 3 (no replicas)
+"""
+
 # ╔═╡ Cell order:
 # ╟─d9819fdc-4a5e-11f1-131a-638b931665ac
 # ╟─96057253-077e-40fb-8cf1-a4e20e9e424c
@@ -1019,7 +1153,8 @@ end
 # ╟─be4aa52f-f145-41d7-8db2-53e5bf49282a
 # ╠═71fa844e-0cb2-4eeb-ab66-62b3663b863e
 # ╟─0b904fff-353f-4792-ae35-414304bd0d9d
-# ╟─0f03a51d-ea78-4766-aa0a-ee83248feba6
+# ╟─c95fd462-1737-4765-b4ad-76bc7483e421
+# ╟─b5f55bd5-7ccd-4297-a324-1ffe9a032023
 # ╟─d65cda47-4a97-4a96-8179-29a603ad02bf
 # ╟─245d1034-b94f-44cc-84d1-b86d2e6e4b25
 # ╟─efcc3926-7c1b-421d-a340-61f1e026679e
@@ -1048,3 +1183,5 @@ end
 # ╟─e9401527-4c5c-411b-b500-74332cae29c2
 # ╟─7305a13c-68c0-4951-b3b5-b33b65ae5073
 # ╟─cb42a155-51ea-42d9-8958-a571d7cb7e26
+# ╠═64071412-d94b-4da0-84aa-d7d7fa7070a3
+# ╟─0f03a51d-ea78-4766-aa0a-ee83248feba6
